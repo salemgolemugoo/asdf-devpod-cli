@@ -2,10 +2,51 @@
 
 set -euo pipefail
 
-current_script_path=${BASH_SOURCE[0]}
-plugin_dir=$(dirname "$(dirname "$current_script_path")")
+[ -z "${ASDF_INSTALL_TYPE+x}" ] && echo "ASDF_INSTALL_TYPE is required" && exit 1
+[ -z "${ASDF_INSTALL_VERSION+x}" ] && echo "ASDF_INSTALL_VERSION is required" && exit 1
+[ -z "${ASDF_INSTALL_PATH+x}" ] && echo "ASDF_INSTALL_PATH is required" && exit 1
 
-# shellcheck source=./lib/utils.bash
-source "${plugin_dir}/lib/utils.bash"
+install() {
+  local install_type=$1
+  [ "$install_type" != "version" ] && echo "install type, $install_type, is not supported" && exit 1
 
-install_version "$ASDF_INSTALL_TYPE" "$ASDF_INSTALL_VERSION" "$ASDF_INSTALL_PATH"
+  local version=$2
+  local install_path=$3
+
+  local bin_install_path="$install_path/bin"
+  local bin_path="${bin_install_path}/devpod"
+
+  local platform
+  [ "Linux" = "$(uname)" ] && platform="linux" || platform="darwin"
+
+  OVERWRITE_ARCH=${ASDF_DEVPODCLI_OVERWRITE_ARCH:-"false"}
+  local arch
+  machine=$(uname -m)
+  if [[ $OVERWRITE_ARCH != "false" ]]; then
+    arch="$OVERWRITE_ARCH"
+  elif [[ $machine == "arm64" ]] || [[ $machine == "aarch64" ]]; then
+    arch="arm64"
+  elif [[ $machine == *"386"* ]]; then
+    arch="386"
+  else
+    arch="amd64"
+  fi
+
+  local download_url
+  download_url="https://github.com/loft-sh/devpod/releases/download/v${version}/devpod-${platform}-${arch}"
+
+  mkdir -p "${bin_install_path}"
+
+  echo "Downloading devpod cli from ${download_url}"
+
+  STATUSCODE=$(curl -q --write-out "%{http_code}" -Lo "$bin_path" -C - "$download_url")
+
+  if test "${STATUSCODE}" -ne 200; then
+    echo "Binary for version '${version}' was not found or could not be retrieved."
+    exit 1
+  fi
+
+  chmod +x "$bin_path"
+}
+
+install "$ASDF_INSTALL_TYPE" "$ASDF_INSTALL_VERSION" "$ASDF_INSTALL_PATH"
